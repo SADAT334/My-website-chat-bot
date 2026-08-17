@@ -68,7 +68,7 @@ def respond(message, history):
 
         # Using gemini-2.0-flash (most stable and fast)
         chat = client.chats.create(
-            model="gemini-2.0-flash",
+            model="gemini-3.7-flash",
             history=gemini_history,
             config=types.GenerateContentConfig(system_instruction=AGENT_PERSONA),
         )
