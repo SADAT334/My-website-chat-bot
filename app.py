@@ -73,7 +73,7 @@ def respond(message, history):
             )
 
         chat = client.chats.create(
-            model="gemini-1.5-flash",
+            model="gemini-2.5-flash",
             history=gemini_history,
             config=types.GenerateContentConfig(system_instruction=AGENT_PERSONA),
         )
