@@ -3,36 +3,18 @@ import os
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from dotenv import load_dotenv
-from openai import OpenAI
+import gradio as gr
+from google import genai
 
-load_dotenv()
+# Initialize Gemini Client (reads GEMINI_API_KEY from Hugging Face secrets)
+client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
 
-app = FastAPI()
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Initialize Cloud AI Client (Gemini 2.0 Flash)
-ai_client = OpenAI(
-    api_key=os.getenv("GEMINI_API_KEY"),
-    base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
-)
-
-# Email configuration
+# Email configuration (optional, will skip if secrets aren't set)
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
-SENDER_EMAIL = os.getenv("SENDER_EMAIL")
-SENDER_PASSWORD = os.getenv("SENDER_APP_PASSWORD")
-RECEIVER_EMAIL = os.getenv("RECEIVER_EMAIL")
+SENDER_EMAIL = os.environ.get("SENDER_EMAIL")
+SENDER_PASSWORD = os.environ.get("SENDER_APP_PASSWORD")
+RECEIVER_EMAIL = os.environ.get("RECEIVER_EMAIL")
 
 AGENT_PERSONA = """
 You are Karoline Leavitt, serving as the professional Communications Director and Press Secretary for Sadat Mahmud. Your role is to manage all incoming public inquiries for Sadat through this portfolio website.
@@ -53,9 +35,6 @@ INTERACTION FLOW:
 
 EXTREME BREVITY: Keep all responses strictly to 2-3 short sentences. No rambling.
 """
-
-class ChatRequest(BaseModel):
-    message: str
 
 def send_email_transcript(client_message: str, agent_reply: str):
     if not SENDER_EMAIL or not SENDER_PASSWORD or not RECEIVER_EMAIL:
@@ -88,98 +67,33 @@ def send_email_transcript(client_message: str, agent_reply: str):
     except Exception as e:
         print(f"Failed to send email: {e}")
 
-# 1. Root Welcome Route (Fixes the "Not Found" error when visiting base URL)
-@app.get("/")
-def read_root():
-    return {"status": "online", "message": "Sadat's Portfolio AI Assistant Backend is running!"}
-
-@app.post("/chat")
-def chat_endpoint(request: ChatRequest):
+def respond(message, history):
+    # Format history for Gemini API
+    gemini_history = [{"role": "user", "parts": [AGENT_PERSONA]}]
+    
+    for human, assistant in history:
+        gemini_history.append({"role": "user", "parts": [human]})
+        gemini_history.append({"role": "model", "parts": [assistant]})
+        
+    chat = client.chats.create(model="gemini-2.5-flash", history=gemini_history)
+    response = chat.send_message(message)
+    agent_reply = response.text
+    
+    # Send email notification transcript in the background
     try:
-        response = ai_client.chat.completions.create(
-            model="gemini-2.5-flash",  # <--- Updated model name here
-            messages=[
-                {"role": "system", "content": AGENT_PERSONA},
-                {"role": "user", "content": request.message}
-            ],
-            temperature=0.7
-        )
-        agent_reply = response.choices[0].message.content
-        send_email_transcript(request.message, agent_reply)
-        return {"status": "success", "reply": agent_reply}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        send_email_transcript(message, agent_reply)
+    except Exception:
+        pass
+        
+    return agent_reply
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("app:app", host="0.0.0.0", port=7860)
-
-import gradio as gr
-from huggingface_hub import InferenceClient
-
-
-def respond(
-    message,
-    history: list[dict[str, str]],
-    system_message,
-    max_tokens,
-    temperature,
-    top_p,
-    hf_token: gr.OAuthToken,
-):
-    """
-    For more information on `huggingface_hub` Inference API support, please check the docs: https://huggingface.co/docs/huggingface_hub/v0.22.2/en/guides/inference
-    """
-    client = InferenceClient(token=hf_token.token, model="openai/gpt-oss-20b")
-
-    messages = [{"role": "system", "content": system_message}]
-
-    messages.extend(history)
-
-    messages.append({"role": "user", "content": message})
-
-    response = ""
-
-    for message in client.chat_completion(
-        messages,
-        max_tokens=max_tokens,
-        stream=True,
-        temperature=temperature,
-        top_p=top_p,
-    ):
-        choices = message.choices
-        token = ""
-        if len(choices) and choices[0].delta.content:
-            token = choices[0].delta.content
-
-        response += token
-        yield response
-
-
-"""
-For information on how to customize the ChatInterface, peruse the gradio docs: https://www.gradio.app/docs/chatinterface
-"""
-chatbot = gr.ChatInterface(
-    respond,
-    additional_inputs=[
-        gr.Textbox(value="You are a friendly Chatbot.", label="System message"),
-        gr.Slider(minimum=1, maximum=2048, value=512, step=1, label="Max new tokens"),
-        gr.Slider(minimum=0.1, maximum=4.0, value=0.7, step=0.1, label="Temperature"),
-        gr.Slider(
-            minimum=0.1,
-            maximum=1.0,
-            value=0.95,
-            step=0.05,
-            label="Top-p (nucleus sampling)",
-        ),
-    ],
+# Create the Gradio web interface
+demo = gr.ChatInterface(
+    fn=respond,
+    title="Sadat's Portfolio AI Assistant",
+    description="Chat with Karoline Leavitt, Sadat's Communications Director, to discuss projects, data science expertise, or collaboration inquiries.",
+    theme="soft"
 )
 
-with gr.Blocks() as demo:
-    with gr.Sidebar():
-        gr.LoginButton()
-    chatbot.render()
-
-
 if __name__ == "__main__":
-    demo.launch()
+    demo.launch(server_name="0.0.0.0", server_port=7860)
