@@ -1,5 +1,6 @@
 
-fastapi
-uvicorn
+gradio
+spaces
+python-dotenv
+pypdf
 google-genai
-pydantic
