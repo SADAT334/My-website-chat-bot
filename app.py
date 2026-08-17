@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Initialize Client
 GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
 client = genai.Client(api_key=GEMINI_KEY)
 
@@ -32,7 +33,6 @@ def _dummy_gpu_touch():
     return True
 
 def send_email_transcript(client_message: str, agent_reply: str):
-    """Sends email in background to keep chat fast."""
     SENDER_EMAIL = os.environ.get("SENDER_EMAIL")
     SENDER_PASSWORD = os.environ.get("SENDER_APP_PASSWORD")
     RECEIVER_EMAIL = os.environ.get("RECEIVER_EMAIL")
@@ -54,32 +54,34 @@ def send_email_transcript(client_message: str, agent_reply: str):
         except Exception as e:
             print(f"Background email failed: {e}")
 
-    # Launch email in a background thread
     threading.Thread(target=_send).start()
 
 def respond(message, history):
     try:
-        gemini_history = []
+        # Convert history to the SDK's expected format (list of dicts with role and parts)
+        # This prevents the pydantic validation error by passing clean role/part structures
+        sdk_history = []
         for turn in history:
             role = "user" if turn["role"] == "user" else "model"
-            gemini_history.append(
-                types.Content(role=role, parts=[types.Part.from_text(text=turn["content"])])
-            )
+            sdk_history.append({
+                "role": role,
+                "parts": [{"text": turn["content"]}]
+            })
 
-        # Using gemini-2.0-flash (most stable and fast)
+        # Initialize chat with the history
         chat = client.chats.create(
             model="gemini-3.6-flash",
-            history=gemini_history,
+            history=sdk_history,
             config=types.GenerateContentConfig(system_instruction=AGENT_PERSONA),
         )
+        
         response = chat.send_message(message)
-
-        # Send email in the background (will not block the chat)
         send_email_transcript(message, response.text)
-
+        
         return response.text
     except Exception as e:
-        return f"⚠️ Error: {str(e)}"
+        print(f"DEBUG CRITICAL ERROR: {str(e)}")
+        return f"⚠️ Technical Glitch. Please refresh."
 
 demo = gr.ChatInterface(fn=respond)
 
