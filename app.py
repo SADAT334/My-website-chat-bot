@@ -1,5 +1,6 @@
 import os
 import smtplib
+import threading
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
@@ -14,7 +15,6 @@ load_dotenv()
 GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
 client = genai.Client(api_key=GEMINI_KEY)
 
-# --- YOUR PERSONA IS FULLY RESTORED HERE ---
 AGENT_PERSONA = """
 You are Karoline Leavitt, serving as the professional Communications Director and Press Secretary for Sadat Mahmud.
 Your role is to manage all incoming public inquiries for Sadat through this portfolio website.
@@ -27,44 +27,38 @@ CRITICAL RULES:
 5. EXTREME BREVITY: Keep all responses strictly to 2-3 short sentences. No rambling.
 """
 
-
-# --- Required so HF Spaces will start this app on ZeroGPU hardware. ---
-# This app never actually needs a GPU (Gemini calls are pure API calls),
-# but new free-tier Spaces are provisioned on ZeroGPU by default, and the
-# runtime refuses to start unless at least one @spaces.GPU function exists.
-# We never call this function, so no GPU is ever actually allocated.
 @spaces.GPU(duration=1)
 def _dummy_gpu_touch():
     return True
 
-
 def send_email_transcript(client_message: str, agent_reply: str):
+    """Sends email in background to keep chat fast."""
     SENDER_EMAIL = os.environ.get("SENDER_EMAIL")
     SENDER_PASSWORD = os.environ.get("SENDER_APP_PASSWORD")
     RECEIVER_EMAIL = os.environ.get("RECEIVER_EMAIL")
+    
     if not all([SENDER_EMAIL, SENDER_PASSWORD, RECEIVER_EMAIL]):
         return
 
-    try:
-        msg = MIMEMultipart()
-        msg['From'], msg['To'] = SENDER_EMAIL, RECEIVER_EMAIL
-        msg['Subject'] = "🔔 New Portfolio Inquiry"
-        msg.attach(MIMEText(f"Visitor: {client_message}\n\nAgent Reply: {agent_reply}", 'plain'))
-        server = smtplib.SMTP("smtp.gmail.com", 587)
-        server.starttls()
-        server.login(SENDER_EMAIL, SENDER_PASSWORD)
-        server.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, msg.as_string())
-        server.quit()
-    except Exception as e:
-        print(f"Email failed: {e}")
+    def _send():
+        try:
+            msg = MIMEMultipart()
+            msg['From'], msg['To'] = SENDER_EMAIL, RECEIVER_EMAIL
+            msg['Subject'] = "🔔 New Portfolio Inquiry"
+            msg.attach(MIMEText(f"Visitor: {client_message}\n\nAgent Reply: {agent_reply}", 'plain'))
+            server = smtplib.SMTP("smtp.gmail.com", 587)
+            server.starttls()
+            server.login(SENDER_EMAIL, SENDER_PASSWORD)
+            server.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, msg.as_string())
+            server.quit()
+        except Exception as e:
+            print(f"Background email failed: {e}")
 
+    # Launch email in a background thread
+    threading.Thread(target=_send).start()
 
 def respond(message, history):
     try:
-        # Gradio 6.x ChatInterface passes history as a list of
-        # {"role": ..., "content": ...} dicts, not (human, assistant) tuples.
-        # The google-genai SDK requires each history turn as a types.Content
-        # object with parts as a list of types.Part (not raw strings).
         gemini_history = []
         for turn in history:
             role = "user" if turn["role"] == "user" else "model"
@@ -72,23 +66,20 @@ def respond(message, history):
                 types.Content(role=role, parts=[types.Part.from_text(text=turn["content"])])
             )
 
-        # Gemini model naming moves fast — as of Aug 2026, gemini-3.7-flash is
-        # the current general-availability Flash model. If it's retired by the
-        # time you read this, check https://ai.google.dev/gemini-api/docs/models
+        # Using gemini-2.0-flash (most stable and fast)
         chat = client.chats.create(
-            model="gemini-3.7-flash",
+            model="gemini-2.0-flash",
             history=gemini_history,
             config=types.GenerateContentConfig(system_instruction=AGENT_PERSONA),
         )
         response = chat.send_message(message)
 
-        # Try to send email
+        # Send email in the background (will not block the chat)
         send_email_transcript(message, response.text)
 
         return response.text
     except Exception as e:
         return f"⚠️ Error: {str(e)}"
-
 
 demo = gr.ChatInterface(fn=respond)
 
