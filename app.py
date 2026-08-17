@@ -72,8 +72,11 @@ def respond(message, history):
                 types.Content(role=role, parts=[types.Part.from_text(text=turn["content"])])
             )
 
+        # Gemini model naming moves fast — as of Aug 2026, gemini-3.7-flash is
+        # the current general-availability Flash model. If it's retired by the
+        # time you read this, check https://ai.google.dev/gemini-api/docs/models
         chat = client.chats.create(
-            model="gemini-2.5-flash",
+            model="gemini-3.7-flash",
             history=gemini_history,
             config=types.GenerateContentConfig(system_instruction=AGENT_PERSONA),
         )
