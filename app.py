@@ -6,6 +6,7 @@ from email.mime.multipart import MIMEMultipart
 import gradio as gr
 import spaces
 from google import genai
+from google.genai import types
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -62,12 +63,20 @@ def respond(message, history):
     try:
         # Gradio 6.x ChatInterface passes history as a list of
         # {"role": ..., "content": ...} dicts, not (human, assistant) tuples.
-        gemini_history = [{"role": "user", "parts": [AGENT_PERSONA]}]
+        # The google-genai SDK requires each history turn as a types.Content
+        # object with parts as a list of types.Part (not raw strings).
+        gemini_history = []
         for turn in history:
             role = "user" if turn["role"] == "user" else "model"
-            gemini_history.append({"role": role, "parts": [turn["content"]]})
+            gemini_history.append(
+                types.Content(role=role, parts=[types.Part.from_text(text=turn["content"])])
+            )
 
-        chat = client.chats.create(model="gemini-1.5-flash", history=gemini_history)
+        chat = client.chats.create(
+            model="gemini-1.5-flash",
+            history=gemini_history,
+            config=types.GenerateContentConfig(system_instruction=AGENT_PERSONA),
+        )
         response = chat.send_message(message)
 
         # Try to send email
