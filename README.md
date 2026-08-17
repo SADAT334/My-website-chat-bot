@@ -1,5 +1,5 @@
 ---
-title: Gradio Chatbot
+title: Sadat Portfolio Assistant
 emoji: 💬
 colorFrom: yellow
 colorTo: purple
