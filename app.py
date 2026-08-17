@@ -91,8 +91,7 @@ def respond(message, history):
 demo = gr.ChatInterface(
     fn=respond,
     title="Sadat's Portfolio AI Assistant",
-    description="Chat with Karoline Leavitt, Sadat's Communications Director, to discuss projects, data science expertise, or collaboration inquiries.",
-    theme="soft"
+    description="Chat with Karoline Leavitt, Sadat's Communications Director, to discuss projects, data science expertise, or collaboration inquiries."
 )
 
 if __name__ == "__main__":
