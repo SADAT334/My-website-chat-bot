@@ -4,7 +4,6 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import gradio as gr
 from google import genai
-import spaces
 
 # Initialize Gemini Client
 client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
@@ -67,24 +66,26 @@ def send_email_transcript(client_message: str, agent_reply: str):
     except Exception as e:
         print(f"Failed to send email: {e}")
 
-@spaces.GPU
 def respond(message, history):
-    gemini_history = [{"role": "user", "parts": [AGENT_PERSONA]}]
-    
-    for human, assistant in history:
-        gemini_history.append({"role": "user", "parts": [human]})
-        gemini_history.append({"role": "model", "parts": [assistant]})
-        
-    chat = client.chats.create(model="gemini-2.5-flash", history=gemini_history)
-    response = chat.send_message(message)
-    agent_reply = response.text
-    
     try:
-        send_email_transcript(message, agent_reply)
-    except Exception:
-        pass
+        gemini_history = [{"role": "user", "parts": [AGENT_PERSONA]}]
         
-    return agent_reply
+        for human, assistant in history:
+            gemini_history.append({"role": "user", "parts": [human]})
+            gemini_history.append({"role": "model", "parts": [assistant]})
+            
+        chat = client.chats.create(model="gemini-2.5-flash", history=gemini_history)
+        response = chat.send_message(message)
+        agent_reply = response.text
+        
+        try:
+            send_email_transcript(message, agent_reply)
+        except Exception:
+            pass
+            
+        return agent_reply
+    except Exception as e:
+        return f"⚠️ Error: {str(e)}"
 
 demo = gr.ChatInterface(
     fn=respond,
