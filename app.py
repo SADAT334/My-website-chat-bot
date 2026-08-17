@@ -11,7 +11,7 @@ load_dotenv()
 GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
 client = genai.Client(api_key=GEMINI_KEY)
 
-# --- YOUR PERSONA IS HERE ---
+# --- YOUR PERSONA IS FULLY RESTORED HERE ---
 AGENT_PERSONA = """
 You are Karoline Leavitt, serving as the professional Communications Director and Press Secretary for Sadat Mahmud. 
 Your role is to manage all incoming public inquiries for Sadat through this portfolio website.
@@ -24,14 +24,29 @@ CRITICAL RULES:
 5. EXTREME BREVITY: Keep all responses strictly to 2-3 short sentences. No rambling.
 """
 
-def respond(message, history):
-    if not GEMINI_KEY:
-        return "⚠️ Configuration Error: GEMINI_API_KEY is missing."
-    
+def send_email_transcript(client_message: str, agent_reply: str):
+    SENDER_EMAIL = os.environ.get("SENDER_EMAIL")
+    SENDER_PASSWORD = os.environ.get("SENDER_APP_PASSWORD")
+    RECEIVER_EMAIL = os.environ.get("RECEIVER_EMAIL")
+    if not all([SENDER_EMAIL, SENDER_PASSWORD, RECEIVER_EMAIL]): return
+
     try:
-        # Re-adding the persona to the start of the chat history
+        msg = MIMEMultipart()
+        msg['From'], msg['To'] = SENDER_EMAIL, RECEIVER_EMAIL
+        msg['Subject'] = "🔔 New Portfolio Inquiry"
+        msg.attach(MIMEText(f"Visitor: {client_message}\n\nAgent Reply: {agent_reply}", 'plain'))
+        server = smtplib.SMTP("smtp.gmail.com", 587)
+        server.starttls()
+        server.login(SENDER_EMAIL, SENDER_PASSWORD)
+        server.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, msg.as_string())
+        server.quit()
+    except Exception as e:
+        print(f"Email failed: {e}")
+
+def respond(message, history):
+    try:
+        # Re-integrating the persona into the history
         gemini_history = [{"role": "user", "parts": [AGENT_PERSONA]}]
-        
         for human, assistant in history:
             gemini_history.append({"role": "user", "parts": [human]})
             gemini_history.append({"role": "model", "parts": [assistant]})
@@ -39,11 +54,11 @@ def respond(message, history):
         chat = client.chats.create(model="gemini-1.5-flash", history=gemini_history)
         response = chat.send_message(message)
         
+        # Try to send email
+        send_email_transcript(message, response.text)
         return response.text
     except Exception as e:
-        # This print statement is the key! It shows up in your Logs tab.
-        print(f"DEBUG ERROR: {type(e).__name__} - {str(e)}")
-        return f"⚠️ AI Error: {type(e).__name__}"
+        return f"⚠️ Error: {str(e)}"
 
 demo = gr.ChatInterface(fn=respond)
 
