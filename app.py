@@ -1,4 +1,4 @@
-<<<<<<< HEAD
+
 import os
 import smtplib
 from email.mime.text import MIMEText
@@ -113,7 +113,7 @@ def chat_endpoint(request: ChatRequest):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("app:app", host="0.0.0.0", port=7860)
-=======
+
 import gradio as gr
 from huggingface_hub import InferenceClient
 
