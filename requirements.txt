@@ -1,5 +1,5 @@
 
-gradio
+fastapi
+uvicorn
 google-genai
-python-dotenv
-spaces
+pydantic
