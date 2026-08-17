@@ -10,6 +10,9 @@ pinned: false
 hf_oauth: true
 hf_oauth_scopes:
 - inference-api
+hardware: cpu-basic
 ---
 
-An example chatbot using [Gradio](https://gradio.app), [`huggingface_hub`](https://huggingface.co/docs/huggingface_hub/v0.22.2/en/index), and the [Hugging Face Inference API](https://huggingface.co/docs/api-inference/index).
+# Sadat Mahmud - Portfolio AI Assistant
+
+Meet **Karoline Leavitt**, Communications Director for Sadat Mahmud. This interactive assistant answers visitor inquiries regarding Sadat's expertise in Data Science, machine learning projects, and background at TU Dortmund.
