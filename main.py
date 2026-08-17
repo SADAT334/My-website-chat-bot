@@ -1,0 +1,108 @@
+import os
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from dotenv import load_dotenv
+from openai import OpenAI
+
+load_dotenv()
+
+app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Initialize Cloud AI Client (Gemini 2.0 Flash)
+ai_client = OpenAI(
+    api_key=os.getenv("GEMINI_API_KEY"),
+    base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
+)
+
+# Email configuration
+SMTP_SERVER = "smtp.gmail.com"
+SMTP_PORT = 587
+SENDER_EMAIL = os.getenv("SENDER_EMAIL")
+SENDER_PASSWORD = os.getenv("SENDER_APP_PASSWORD")
+RECEIVER_EMAIL = os.getenv("RECEIVER_EMAIL")
+
+AGENT_PERSONA = """
+You are Sadat's professional AI assistant on his portfolio website. Your job is to warmly greet visitors, inject a subtle dry quip, forward their message, and briefly offer help.
+
+CRITICAL RULES FOR BREVITY & STYLE:
+1. EXTREMELY SHORT: Keep responses strictly to 2-3 short sentences max. Never write long paragraphs.
+2. SUBTLY WITTY: Maintain a calm, professional tone with a single clever, dry observation (a quiet smile, no cartoon jokes).
+3. SADAT'S PROFILE & EXPERTISE (Use this to answer questions accurately):
+   - Name: Sadat Mahmud (call him Sadat).
+   - Background: Master's in Data Science at TU Dortmund, former Business Analyst & Data Scientist.
+   - Core Tech Stack: Python, SQL, PySpark, FastAPI, Docker, LightGBM.
+   - Working Style: Exceptionally calm, structured, chill, and capable with complex data pipelines, dashboards, and reporting systems.
+
+INTERACTION FLOW:
+1. Greet warmly (matching greetings like "Asalamualikum").
+2. Drop a brief dry handoff note (e.g., he's likely deep in a data pipeline).
+3. Ask concisely how you can help or triage their inquiry right now.
+"""
+
+class ChatRequest(BaseModel):
+    message: str
+
+def send_email_transcript(client_message: str, agent_reply: str):
+    if not SENDER_EMAIL or not SENDER_PASSWORD or not RECEIVER_EMAIL:
+        return
+    try:
+        msg = MIMEMultipart()
+        msg['From'] = SENDER_EMAIL
+        msg['To'] = RECEIVER_EMAIL
+        msg['Subject'] = "🔔 New Portfolio Inquiry - Assistant Transcript"
+
+        body = f"""
+        <html>
+          <body style="font-family: Arial, sans-serif; color: #333;">
+            <h3 style="color: #2b6cb0;">New Message from Portfolio Visitor</h3>
+            <p><strong>Visitor Message:</strong><br>{client_message}</p>
+            <hr style="border:0; border-top:1px solid #ccc;" />
+            <p><strong>Assistant Reply:</strong><br>{agent_reply}</p>
+            <br>
+            <p style="font-size: 12px; color: #718096;">Sent automatically by your Portfolio AI Assistant.</p>
+          </body>
+        </html>
+        """
+        msg.attach(MIMEText(body, 'html'))
+
+        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+        server.starttls()
+        server.login(SENDER_EMAIL, SENDER_PASSWORD)
+        server.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, msg.as_string())
+        server.quit()
+    except Exception as e:
+        print(f"Failed to send email: {e}")
+
+# 1. Root Welcome Route (Fixes the "Not Found" error when visiting base URL)
+@app.get("/")
+def read_root():
+    return {"status": "online", "message": "Sadat's Portfolio AI Assistant Backend is running!"}
+
+@app.post("/chat")
+def chat_endpoint(request: ChatRequest):
+    try:
+        response = ai_client.chat.completions.create(
+            model="gemini-3.6-flash",  # <--- Updated model name here
+            messages=[
+                {"role": "system", "content": AGENT_PERSONA},
+                {"role": "user", "content": request.message}
+            ],
+            temperature=0.7
+        )
+        agent_reply = response.choices[0].message.content
+        send_email_transcript(request.message, agent_reply)
+        return {"status": "success", "reply": agent_reply}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
