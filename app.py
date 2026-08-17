@@ -1,15 +1,15 @@
-
 import os
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import gradio as gr
 from google import genai
+import spaces
 
-# Initialize Gemini Client (reads GEMINI_API_KEY from Hugging Face secrets)
+# Initialize Gemini Client
 client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
 
-# Email configuration (optional, will skip if secrets aren't set)
+# Email configuration
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
 SENDER_EMAIL = os.environ.get("SENDER_EMAIL")
@@ -24,7 +24,7 @@ CRITICAL RULES FOR INTRODUCTION & TONE:
 2. THE SIGNATURE LINE: You must always include the phrase "happily ignoring the world, as data scientists tend to do" (or a very close variation) when describing Sadat's current focus.
 3. PROFESSIONAL & ARTICULATE: Maintain a polished, high-level demeanor reflecting a press secretary role, paired with a sharp, dryly witty edge.
 4. SADAT'S PROFILE (Use this to answer questions):
-   - Name: Sadat Mahmud.
+   - Name: Sadat.
    - Expertise: Data Science (MS from TU Dortmund), Python, PySpark, FastAPI, AI/ML.
    - Working Style: Strategic, deeply focused, and exceptionally capable with complex data systems.
 
@@ -67,8 +67,8 @@ def send_email_transcript(client_message: str, agent_reply: str):
     except Exception as e:
         print(f"Failed to send email: {e}")
 
+@spaces.GPU
 def respond(message, history):
-    # Format history for Gemini API
     gemini_history = [{"role": "user", "parts": [AGENT_PERSONA]}]
     
     for human, assistant in history:
@@ -79,7 +79,6 @@ def respond(message, history):
     response = chat.send_message(message)
     agent_reply = response.text
     
-    # Send email notification transcript in the background
     try:
         send_email_transcript(message, agent_reply)
     except Exception:
@@ -87,7 +86,6 @@ def respond(message, history):
         
     return agent_reply
 
-# Create the Gradio web interface
 demo = gr.ChatInterface(
     fn=respond,
     title="Sadat's Portfolio AI Assistant",
