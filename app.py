@@ -58,30 +58,54 @@ def send_email_transcript(client_message: str, agent_reply: str):
 
 def respond(message, history):
     try:
-        # Convert history to the SDK's expected format (list of dicts with role and parts)
-        # This prevents the pydantic validation error by passing clean role/part structures
         sdk_history = []
+
         for turn in history:
             role = "user" if turn["role"] == "user" else "model"
-            sdk_history.append({
-                "role": role,
-                "parts": [{"text": turn["content"]}]
-            })
+            content = turn["content"]
 
-        # Initialize chat with the history
+            # Gradio 6 can return content as a list of dictionaries
+            # e.g. [{"text": "hi", "type": "text"}]
+            if isinstance(content, list):
+                text_parts = []
+
+                for item in content:
+                    if isinstance(item, dict) and item.get("type") == "text":
+                        text_parts.append(item.get("text", ""))
+
+                text = "".join(text_parts)
+
+            else:
+                text = str(content)
+
+            # Only add messages that actually contain text
+            if text:
+                sdk_history.append({
+                    "role": role,
+                    "parts": [{"text": text}]
+                })
+
         chat = client.chats.create(
             model="gemini-3.6-flash",
             history=sdk_history,
-            config=types.GenerateContentConfig(system_instruction=AGENT_PERSONA),
+            config=types.GenerateContentConfig(
+                system_instruction=AGENT_PERSONA
+            ),
         )
-        
+
         response = chat.send_message(message)
+
         send_email_transcript(message, response.text)
-        
+
         return response.text
+
     except Exception as e:
-        print(f"DEBUG CRITICAL ERROR: {str(e)}")
-        return f"⚠️ Technical Glitch. Please refresh."
+        import traceback
+        print("========== DEBUG ERROR ==========")
+        traceback.print_exc()
+        print("=================================")
+
+        return "⚠️ Technical glitch. Please try again."
 
 demo = gr.ChatInterface(fn=respond)
 
