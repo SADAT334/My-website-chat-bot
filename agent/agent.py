@@ -21,6 +21,7 @@ def send_email_transcript(client_message: str, agent_reply: str):
     RECEIVER_EMAIL = os.environ.get("RECEIVER_EMAIL")
     
     if not all([SENDER_EMAIL, SENDER_PASSWORD, RECEIVER_EMAIL]):
+        print("⚠️ Email skipped: Missing SENDER_EMAIL, SENDER_APP_PASSWORD, or RECEIVER_EMAIL environment variables.")
         return
 
     def _send():
@@ -34,8 +35,9 @@ def send_email_transcript(client_message: str, agent_reply: str):
             server.login(SENDER_EMAIL, SENDER_PASSWORD)
             server.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, msg.as_string())
             server.quit()
+            print("✅ Email transcript sent successfully!")
         except Exception as e:
-            print(f"Background email failed: {e}")
+            print(f"❌ Background email failed: {e}")
 
     threading.Thread(target=_send).start()
 
@@ -50,8 +52,6 @@ def get_resume_text():
 def build_system_instruction():
     """Dynamically merges the Karoline persona, cached resume, and live GitHub context."""
     resume_text = get_resume_text()
-    
-    # Optionally pre-fetch github summary so it's always instantly available without tool-call crashes
     github_text = get_github_projects()
     
     combined_data = f"--- RESUME DATA ---\n{resume_text}\n\n--- GITHUB REPOSITORIES ---\n{github_text}"
@@ -63,20 +63,20 @@ def run_agent_chat(message, history):
         client = get_gemini_client()
         sdk_history = []
 
+        # Safely convert Gradio history to standard text-only SDK history
         for turn in history:
-            role = "user" if turn["role"] == "user" else "model"
-            content = turn["content"]
-
+            role = turn.get("role")
+            if role not in ["user", "model"]:
+                role = "user" if role == "human" else "model"
+            
+            content = turn.get("content", "")
             if isinstance(content, list):
-                text_parts = []
-                for item in content:
-                    if isinstance(item, dict) and item.get("type") == "text":
-                        text_parts.append(item.get("text", ""))
+                text_parts = [str(item.get("text", "")) for item in content if isinstance(item, dict)]
                 text = "".join(text_parts)
             else:
                 text = str(content)
 
-            if text:
+            if text.strip():
                 sdk_history.append({
                     "role": role,
                     "parts": [{"text": text}]
@@ -84,8 +84,9 @@ def run_agent_chat(message, history):
 
         system_instruction = build_system_instruction()
 
+        # Create chat session with clean history
         chat = client.chats.create(
-            model="gemini-3.7-flash",
+            model="gemini-3.6-flash",
             history=sdk_history,
             config=types.GenerateContentConfig(
                 system_instruction=system_instruction
@@ -102,4 +103,4 @@ def run_agent_chat(message, history):
         print("========== DEBUG ERROR ==========")
         traceback.print_exc()
         print("=================================")
-        return "⚠️ Technical glitch. Please try again."
+        return f"⚠️ Technical glitch: {e}"
